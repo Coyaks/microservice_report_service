@@ -39,5 +39,11 @@ public class ReportController {
                 .map(data -> new ApiResponse<>("Success", data, 200));
     }
 
+    @GetMapping("/customer-summary/{customerId}")
+    public Mono<ApiResponse<Map<String, Object>>> getCustomerSummary(@PathVariable String customerId) {
+        return service.getCustomerSummary(customerId)
+                .map(data -> new ApiResponse<>("Success", data, 200));
+    }
+
 
 }

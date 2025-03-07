@@ -15,4 +15,6 @@ public interface IReportService {
     Mono<Map<String, BigDecimal>> getDailyAverageBalances(String customerId);
 
     Mono<Map<String, BigDecimal>> getCommissionsByProduct(LocalDate startDate, LocalDate endDate);
+
+    Mono<Map<String, Object>> getCustomerSummary(String customerId);
 }

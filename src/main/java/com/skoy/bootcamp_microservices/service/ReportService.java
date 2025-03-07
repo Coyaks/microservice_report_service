@@ -7,6 +7,7 @@ import lombok.RequiredArgsConstructor;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.core.ParameterizedTypeReference;
 import org.springframework.stereotype.Service;
 import org.springframework.web.reactive.function.client.WebClient;
 import reactor.core.publisher.Flux;
@@ -15,6 +16,8 @@ import reactor.core.publisher.Mono;
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.temporal.ChronoUnit;
+import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 
 @Service
@@ -89,6 +92,36 @@ public class ReportService implements IReportService {
                             return Map.entry(groupedFlux.key(), totalCommission);
                         }))
                 .collectMap(Map.Entry::getKey, Map.Entry::getValue);
+    }
+
+    @Override
+    public Mono<Map<String, Object>> getCustomerSummary(String customerId) {
+        Mono<Map<String, Object>> customerInfo = webClientBuilder.build()
+                .get()
+                .uri(customerServiceUrl + "/customers/" + customerId)
+                .retrieve()
+                .bodyToMono(new ParameterizedTypeReference<Map<String, Object>>() {});
+
+        Mono<List<Map<String, Object>>> bankAccounts = webClientBuilder.build()
+                .get()
+                .uri(accountServiceUrl + "/bank_accounts/customer/" + customerId)
+                .retrieve()
+                .bodyToMono(new ParameterizedTypeReference<List<Map<String, Object>>>() {});
+
+        Mono<List<Map<String, Object>>> credits = webClientBuilder.build()
+                .get()
+                .uri(creditServiceUrl + "/credits/customer/" + customerId)
+                .retrieve()
+                .bodyToMono(new ParameterizedTypeReference<List<Map<String, Object>>>() {});
+
+        return Mono.zip(customerInfo, bankAccounts, credits)
+                .map(tuple -> {
+                    Map<String, Object> summary = new HashMap<>();
+                    summary.put("customerInfo", tuple.getT1());
+                    summary.put("bankAccounts", tuple.getT2());
+                    summary.put("credits", tuple.getT3());
+                    return summary;
+                });
     }
 
 }
