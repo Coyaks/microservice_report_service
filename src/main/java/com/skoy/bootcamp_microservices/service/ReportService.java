@@ -2,7 +2,9 @@ package com.skoy.bootcamp_microservices.service;
 
 import com.skoy.bootcamp_microservices.dto.TransactionDTO;
 import com.skoy.bootcamp_microservices.mapper.TransactionMapper;
+import com.skoy.bootcamp_microservices.model.Transaction;
 import com.skoy.bootcamp_microservices.repository.IReportRepository;
+import com.skoy.bootcamp_microservices.utils.UDate;
 import lombok.RequiredArgsConstructor;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -10,15 +12,19 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.core.ParameterizedTypeReference;
 import org.springframework.stereotype.Service;
 import org.springframework.web.reactive.function.client.WebClient;
+import org.springframework.web.util.UriComponentsBuilder;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
 import java.math.BigDecimal;
+import java.net.URI;
 import java.time.LocalDate;
 import java.time.temporal.ChronoUnit;
+import java.util.Comparator;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.stream.Collectors;
 
 @Service
 @RequiredArgsConstructor
@@ -28,17 +34,20 @@ public class ReportService implements IReportService {
     private final WebClient.Builder webClientBuilder;
     private static final Logger logger = LoggerFactory.getLogger(ReportService.class);
 
-    @Value("${customer.service.url}")
+    @Value("${services.customer}")
     private String customerServiceUrl;
 
-    @Value("${account.service.url}")
+    @Value("${services.bankaccount}")
     private String accountServiceUrl;
 
-    @Value("${credit.service.url}")
+    @Value("${services.credit}")
     private String creditServiceUrl;
 
-    @Value("${transaction.service.url}")
+    @Value("${services.transaction}")
     private String transactionServiceUrl;
+
+    @Value("${services.card}")
+    private String cardServiceUrl;
 
 
     @Override
@@ -122,6 +131,66 @@ public class ReportService implements IReportService {
                     summary.put("credits", tuple.getT3());
                     return summary;
                 });
+    }
+
+    @Override
+    public Mono<Map<String, Object>> getGeneralReportByProduct(String customerId, LocalDate dateFrom, LocalDate dateTo) {
+        String dateFromStr = UDate.convertToString(dateFrom);
+        String dateToStr = UDate.convertToString(dateTo);
+
+        String urlBankAccounts = accountServiceUrl + "/bank_accounts/customer/" + customerId+"?dateFrom="+dateFromStr+"&dateTo="+dateToStr;
+        String urlCredits = creditServiceUrl + "/credits/customer/" + customerId+"?dateFrom="+dateFromStr+"&dateTo="+dateToStr;
+
+        Mono<List<Map<String, Object>>> bankAccounts = webClientBuilder.build()
+                .get()
+                .uri(urlBankAccounts)
+                .retrieve()
+                .bodyToMono(new ParameterizedTypeReference<List<Map<String, Object>>>() {});
+
+        Mono<List<Map<String, Object>>> credits = webClientBuilder.build()
+                .get()
+                .uri(urlCredits)
+                .retrieve()
+                .bodyToMono(new ParameterizedTypeReference<List<Map<String, Object>>>() {});
+
+        return Mono.zip(bankAccounts, credits)
+                .map(tuple -> {
+                    Map<String, Object> report = new HashMap<>();
+                    report.put("bankAccounts", tuple.getT1());
+                    report.put("credits", tuple.getT2());
+                    return report;
+                });
+    }
+
+
+
+    /*public Mono<Map<String, List<TransactionDTO>>> getLast10Transactions(String customerId) {
+        return webClientBuilder.build()
+                .get()
+                .uri(transactionServiceUrl + "/transactions/customer/" + customerId)
+                .retrieve()
+                .bodyToFlux(TransactionDTO.class)
+                .filter(transaction -> transaction.getCardType() == Transaction.CardTypeEnum.DEBIT || transaction.getCardType() == Transaction.CardTypeEnum.CREDIT)
+                .sort(Comparator.comparing(TransactionDTO::getCreatedAt).reversed())
+                .take(10)
+                .collectList()
+                .map(transactions -> transactions.stream().collect(Collectors.groupingBy(TransactionDTO::getCardType)));
+    }
+*/
+
+
+    public Mono<Map<String, List<TransactionDTO>>> getLast10Transactions(String customerId) {
+        return webClientBuilder.build()
+                .get()
+                .uri(transactionServiceUrl + "/transactions/customer/" + customerId)
+                .retrieve()
+                .bodyToFlux(TransactionDTO.class)
+                .filter(transaction -> transaction.getCardType() == Transaction.CardTypeEnum.DEBIT || transaction.getCardType() == Transaction.CardTypeEnum.CREDIT)
+                .sort(Comparator.comparing(TransactionDTO::getCreatedAt).reversed())
+                .take(10)
+                .collectList()
+                .map(transactions -> transactions.stream()
+                        .collect(Collectors.groupingBy(transaction -> transaction.getCardType().name())));
     }
 
 }
